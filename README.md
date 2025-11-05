@@ -39,7 +39,7 @@ Usually, you don't need to do this step, but it's better safe than sorry.
 Make sure to read the `Preparation` section first.  
 After enabling the Kobo screensaver feature, follow these steps to install:  
 
-1. Download the installation file (not available at the moment)
+1. Download the latest [KoboRoot.tgz file](https://github.com/redphx/nickel-screensaver/releases/latest)
 2. Connect your Kobo eReader to your computer
 3. Copy the `KoboRoot.tgz` file (downloaded in step 1) into the `.kobo` folder
 4. Eject the device safely
@@ -95,7 +95,7 @@ That means there is a bug with Nickel Screensaver. Don't panic, just uninstall i
 You need to edit Kobo's setting file to prevent it from scanning hidden folders.  
 
 1. Connect your Kobo eReader to your computer
-2. Open `.kobo/Kobo/Kobo eReader.conf` file with a text editor
+2. Open the `.kobo/Kobo/Kobo eReader.conf` file with a text editor
 3. Find the line that starts with `ExcludeSyncFolders=`, then replace the entire line with this:
   ```
   ExcludeSyncFolders=(\\.(?!kobo|adobe).+|([^.][^/]*/)+\\..+)
