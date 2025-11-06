@@ -4,7 +4,7 @@ Nickel Screensaver is an addon that brings the transparent screensaver feature t
 
 <table>
   <tbody>
-    <td><img height="600" src="https://github.com/user-attachments/assets/23a29c98-3be9-4ac1-8a6e-470b9109a262"></td>
+    <td><img height="600" src="https://github.com/user-attachments/assets/a825e165-80fa-4dc0-9e7c-946ebd68e58d"></td>
     <td><img height="600" src="https://github.com/user-attachments/assets/2c102e2b-d70a-4128-b0a7-2c796f368b5f"></td>
   </tbody>
 </table>
@@ -39,10 +39,9 @@ Usually, you don't need to do this step, but it's better safe than sorry.
 Make sure to read the `Preparation` section first.  
 After enabling the Kobo screensaver feature, follow these steps to install:  
 
-1. Download the latest [KoboRoot.tgz file](https://github.com/redphx/nickel-screensaver/releases/latest)
-2. Connect your Kobo eReader to your computer
-3. Copy the `KoboRoot.tgz` file (downloaded in step 1) into the `.kobo` folder
-4. Eject the device safely
+1. Connect your Kobo eReader to your computer
+2. Download the latest [KoboRoot.tgz file](https://github.com/redphx/nickel-screensaver/releases/latest) and place it inside the hidden `.kobo` folder on your Kobo eReader
+3. Eject the device safely
 
 The file structure should look like this:  
 ```
@@ -66,6 +65,8 @@ Now the file structure should look like this:
 ```
 
 From now on, `.adds/screensaver/` is the new location for your screensavers. Don't place them in `.kobo/screensaver` anymore.  
+
+One more note: don't unlock the device immediately while it's still in the locking procress, as that may cause a crash and reboot.
 
 # Screensaver preparation  
 
