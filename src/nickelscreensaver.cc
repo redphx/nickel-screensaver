@@ -208,14 +208,20 @@ extern "C" __attribute__((visibility("default"))) void ns_handle_sleep(N3PowerWo
         }
     }
 
-    if (!is_reading && wallpaper_file.isEmpty()) {
+    if ((is_reading && overlay_file.isEmpty()) || (!is_reading && wallpaper_file.isEmpty())) {
         // Find random wallpaper
         QString random_file = pick_random_file(wallpaper_dir, QStringList() << "*.png" << "*.jpg");
         if (!random_file.isEmpty()) {
             display_mode |= DISPLAY_MODE::Wallpaper;
             wallpaper_file = random_file;
         } else {
-            display_mode &= ~DISPLAY_MODE::Wallpaper;
+            if (overlay_file.isEmpty()) {
+                display_mode &= ~DISPLAY_MODE::Wallpaper;
+            } else {
+                display_mode &= ~DISPLAY_MODE::Overlay;
+                display_mode |= DISPLAY_MODE::Wallpaper;
+                wallpaper_file = overlay_file;
+            }
         }
     }
 
