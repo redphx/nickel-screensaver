@@ -360,6 +360,14 @@ extern "C" __attribute__((visibility("default")))
 void ns_show_sleep_view(N3PowerWorkflowManager* self) {
     N3PowerWorkflowManager_showSleepView(self);
 
+    // Remove blank screensaver
+    QFile file("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
+    file.remove();
+
+    if (screensaver_image.isNull()) {
+        return;
+    }
+
     void *mwc = MainWindowController_sharedInstance();
     QWidget *current_view = MainWindowController_currentView(mwc);
 
