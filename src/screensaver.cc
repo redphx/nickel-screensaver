@@ -146,6 +146,10 @@ QImage screensaver_image;
 bool is_cover_wallpaper = false;
 
 QString pick_random_file(QDir dir, QStringList filters) {
+    if (!dir.exists()) {
+        return "";
+    }
+
     QStringList files = dir.entryList(filters, QDir::Files);
     if (files.isEmpty()) {
         return "";
@@ -267,9 +271,9 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
                 // No overlay+wallpaper -> switch to None mode
                 display_mode = DISPLAY_MODE::None;
             } else {
-                // Has overlay but not wallpaper -> Set overlay as wallpaper & switch to Wallpaper only mode
-                display_mode = DISPLAY_MODE::Wallpaper;
-                wallpaper_file = overlay_file;
+                // Has overlay but not wallpaper -> Set to overlay cover mode
+                is_cover_wallpaper = true;
+                display_mode &= ~DISPLAY_MODE::Wallpaper;
             }
         } else {
             if (random_file.endsWith("/cover")) {
