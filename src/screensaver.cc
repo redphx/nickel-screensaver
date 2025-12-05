@@ -47,6 +47,8 @@ void* (*MainWindowController_sharedInstance)();
 QWidget* (*MainWindowController_currentView)(void*);
 void (*BookCoverDragonPowerView_setInfoPanelVisible)(BookCoverDragonPowerView* self, bool visible);
 void (*FullScreenDragonPowerView_setImage)(QWidget* self, const QImage& img);
+void (*FullScreenDragonPowerView_setInfoPanelVisible)(QWidget* self, bool visible);
+
 
 struct nh_info nickelscreensaver = {
     .name = "Nickel Screensaver",
@@ -124,12 +126,20 @@ struct nh_dlsym nickelscreensaverDlsym[] = {
 		.out  = nh_symoutptr(MainWindowController_currentView),
 	},
     {
-        .name = "_ZN24BookCoverDragonPowerView19setInfoPanelVisibleEb",
-        .out  = nh_symoutptr(BookCoverDragonPowerView_setInfoPanelVisible),
-    },
-    {
         .name = "_ZN25FullScreenDragonPowerView8setImageERK6QImage",
         .out  = nh_symoutptr(FullScreenDragonPowerView_setImage),
+    },
+    {
+        .name = "_ZN24BookCoverDragonPowerView19setInfoPanelVisibleEb",
+        .out  = nh_symoutptr(BookCoverDragonPowerView_setInfoPanelVisible),
+        .desc = "",
+        .optional = true,
+    },
+    {
+        .name = "_ZN25FullScreenDragonPowerView19setInfoPanelVisibleEb",
+        .out  = nh_symoutptr(FullScreenDragonPowerView_setInfoPanelVisible),
+        .desc = "",
+        .optional = true,
     },
 	{0}
 };
