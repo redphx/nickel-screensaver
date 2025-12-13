@@ -152,7 +152,9 @@ NickelHook(
     .uninstall = &ns_uninstall,
 );
 
+// Note: QImage and QPixmap are ref-counted, backing data is COW if more than one reference
 QImage screensaver_image;
+QPixmap screensaver_pixmap;
 bool is_cover_wallpaper = false;
 
 QString pick_random_file(QDir dir, QStringList filters) {
@@ -335,9 +337,22 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
         wallpaper.load(wallpaper_file);
     }
 
-    // 6. Combine overlay & wallpaper
-    QImage result(screen_size, is_cover_wallpaper ? QImage::Format_ARGB32 : QImage::Format_RGB32);
-    QPainter painter(&result);
+    // 6. Combine overlay & wallpaper into target image
+    QPaintDevice *backing;
+    if (is_cover_wallpaper) {
+        if (screensaver_pixmap.isNull() || screensaver_pixmap.size() != screen_size) {
+            screensaver_pixmap = QPixmap(screen_size);
+        }
+        screensaver_pixmap.fill(QColor("transparent"));
+        backing = &screensaver_pixmap;
+    } else {
+        if (screensaver_image.isNull() || screensaver_image.size() != screen_size) {
+            screensaver_image = QImage(screen_size, QImage::Format_RGB32);
+        }
+        screensaver_image.fill(QColor("white"));
+        backing = &screensaver_image;
+    }
+    QPainter painter(backing); // this will copy the image data if it's referenced somewhere else
 
     // Draw wallpaper
     if (!wallpaper.isNull()) {
@@ -376,10 +391,8 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
             }
         }
     }
-    painter.end();
 
-    // 7. Save screensaver
-    screensaver_image = result;
+    painter.end();
 
     // 8. Done
     N3PowerWorkflowManager_handleSleep(self);
@@ -395,7 +408,7 @@ void ns_show_sleep_view(N3PowerWorkflowManager* self) {
     QFile file("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
     file.remove();
 
-    if (screensaver_image.isNull()) {
+    if (screensaver_pixmap.isNull() && screensaver_image.isNull()) {
         return;
     }
 
@@ -404,15 +417,18 @@ void ns_show_sleep_view(N3PowerWorkflowManager* self) {
 
     // Check if cover mode
     if (is_cover_wallpaper) {
-        QPixmap pixmap = QPixmap::fromImage(screensaver_image);
-        QLabel* overlay = new QLabel(current_view);
-        overlay->setPixmap(pixmap);
-        overlay->setGeometry(current_view->rect());
-        overlay->lower();
-        overlay->show();
+        if (!screensaver_pixmap.isNull()) {
+            QLabel* overlay = new QLabel(current_view);
+            overlay->setPixmap(screensaver_pixmap);
+            overlay->setGeometry(current_view->rect());
+            overlay->lower();
+            overlay->show();
+        }
     } else {
-        // Replace current image with the generated screensaver
-        FullScreenDragonPowerView_setImage(current_view, screensaver_image);
+        if (!screensaver_image.isNull()) {
+            // Replace current image with the generated screensaver
+            FullScreenDragonPowerView_setImage(current_view, screensaver_image); // will be drawn with QPainter::drawImage
+        }
     }
 
 
