@@ -13,6 +13,7 @@
 #include <QFile>
 #include <QSettings>
 #include <QFileInfo>
+#include <QBuffer>
 
 typedef void N3PowerWorkflowManager;
 typedef void PowerViewController;
@@ -183,6 +184,65 @@ bool write_blank_screensaver(const QString &file_path) {
     return written == sizeof(blank_screensaver);
 }
 
+QImage glitch_image(const QImage& source, int iterations, int quality = 90) {
+    // 1. Convert QImage to JPEG byte array
+    QByteArray ba;
+    ba.reserve(source.width() * source.height());
+
+    QBuffer buffer(&ba);
+    buffer.open(QIODevice::WriteOnly);
+    source.save(&buffer, "JPG", quality); 
+
+    // 2. Find the Start of Scan (SOS) marker: 0xFF 0xDA
+    const uchar* data = (const uchar*)ba.constData();
+    int img_size = ba.size();
+    int scan_start = 0;
+    for (int i = 0; i < img_size - 4; ++i) {
+        if (data[i] == 0xFF && data[i + 1] == 0xDA) {
+            // Big-endian: high byte at i+2, low byte at i+3
+            int sos_header_length = (data[i + 2] << 8) | data[i + 3];
+            scan_start = i + 2 + sos_header_length;
+            break;
+        }
+    }
+
+    if (scan_start == 0 || scan_start >= img_size - 2) {
+        return source;
+    }
+
+    // 3. Apply the glitch logic
+    iterations = qMax(1, iterations);
+    int data_size = img_size - scan_start - 2;  // Ignore EOI (End of Image), which is 2 bytes: 0xFFD9
+    int chunk_size = data_size / iterations;
+    char* raw_ba = ba.data();
+
+    for (int i = 0; i < iterations; ++i) {
+        int section_start = scan_start + (chunk_size * i);
+        int current_chunk = (i == iterations - 1) ? (data_size - (chunk_size * i)) : chunk_size;
+        if (current_chunk <= 0) {
+            break;
+        }
+
+        int glitch_index = section_start + (qrand() % current_chunk);
+        if (glitch_index < img_size - 2 && (unsigned char)raw_ba[glitch_index - 1] != 0xFF) {
+            // Random byte from 0-FE
+            raw_ba[glitch_index] = (char)(qrand() % 255);
+        }
+    }
+
+    QImage glitched;
+    if (!glitched.loadFromData(ba, "JPG")) {
+        return source;
+    }
+
+    return glitched;
+}
+
+QPixmap glitch_pixmap(const QPixmap& source, int iterations, int quality = 90) {
+    QImage img = source.toImage();
+    return QPixmap::fromImage(glitch_image(img, iterations, quality));
+}
+
 extern "C" __attribute__((visibility("default")))
 void ns_handle_sleep(N3PowerWorkflowManager* self) {
     // Reset data
@@ -322,6 +382,8 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     QDesktopWidget* desktop_widget = QApplication::desktop();
     QScreen* screen = QGuiApplication::primaryScreen();
     QSize screen_size = screen->size();
+    const int glitch_iterations = 5;
+    const int glitch_quality = 80;
 
     if (display_mode & DISPLAY_MODE::Book) {
         // Take screenshot of the current screen if reading
@@ -333,8 +395,12 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
             geometry.width(),
             geometry.height()
         );
+        wallpaper = glitch_pixmap(wallpaper, glitch_iterations, glitch_quality);
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
-        wallpaper.load(wallpaper_file);
+        QImage img(wallpaper_file);
+        if (!img.isNull()) {
+            wallpaper = QPixmap::fromImage(glitch_image(img, glitch_iterations, glitch_quality));
+        }
     }
 
     // 6. Combine overlay & wallpaper into target image
