@@ -254,9 +254,9 @@ QImage glitch_image(const QImage& source, int iterations, int quality = 90) {
     return glitched;
 }
 
-QPixmap glitch_pixmap(const QPixmap& source, int iterations, int quality = 90) {
+QImage glitch_pixmap(const QPixmap& source, int iterations, int quality = 90) {
     QImage img = source.toImage();
-    return QPixmap::fromImage(glitch_image(img, iterations, quality));
+    return glitch_image(img, iterations, quality);
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -393,7 +393,7 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     }
 
     // 5. Handle transparent mode
-    QPixmap wallpaper;
+    QImage wallpaper;
 
     QDesktopWidget* desktop_widget = QApplication::desktop();
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -406,7 +406,7 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     if (display_mode & DISPLAY_MODE::Book) {
         // Take screenshot of the current screen if reading
         QRect geometry = current_view->geometry();
-        wallpaper = screen->grabWindow(
+        QPixmap screenshot = screen->grabWindow(
             desktop_widget->winId(),
             geometry.left(),
             geometry.top(),
@@ -415,13 +415,15 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
         );
 
         if (glitch_enabled) {
-            wallpaper = glitch_pixmap(wallpaper, glitch_iterations, glitch_quality);
+            wallpaper = glitch_pixmap(screenshot, glitch_iterations, glitch_quality);
+        } else {
+            wallpaper = screenshot.toImage();
         }
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
         if (glitch_enabled) {
             QImage img(wallpaper_file);
             if (!img.isNull()) {
-                wallpaper = QPixmap::fromImage(glitch_image(img, glitch_iterations, glitch_quality));
+                wallpaper = glitch_image(img, glitch_iterations, glitch_quality);
             }
         } else {
             wallpaper.load(wallpaper_file);
@@ -449,9 +451,9 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     if (!wallpaper.isNull()) {
         if (wallpaper.size() != screen_size) {
             // Only scales if different sizes
-            painter.drawPixmap(0, 0, wallpaper.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
+            painter.drawImage(0, 0, wallpaper.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
         } else {
-            painter.drawPixmap(0, 0, wallpaper);
+            painter.drawImage(0, 0, wallpaper);
         }
     }
 
