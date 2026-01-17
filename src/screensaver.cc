@@ -24,6 +24,10 @@ constexpr const char* BOOK_COLOR_OVERLAY_ALPHA      = "Book/ColorOverlayAlpha";
 constexpr const char* WALLPAPER_COLOR_OVERLAY       = "Wallpaper/ColorOverlay";
 constexpr const char* WALLPAPER_COLOR_OVERLAY_ALPHA = "Wallpaper/ColorOverlayAlpha";
 
+constexpr const char* GLITCH_ENABLED    = "Glitch/Enabled";
+constexpr const char* GLITCH_ITERATIONS = "Glitch/Iterations";
+constexpr const char* GLITCH_QUALITY    = "Glitch/Quality";
+
 enum DISPLAY_MODE {
     None      = 0b00000,
     Overlay   = 0b00001,
@@ -58,17 +62,29 @@ struct nh_info nickelscreensaver = {
 };
 
 void save_settings(QSettings &settings) {
+    // Book
     QString book_color_overlay = settings.value(BOOK_COLOR_OVERLAY, "ffffff").toString();
     settings.setValue(BOOK_COLOR_OVERLAY, book_color_overlay);
 
     int book_color_overlay_alpha = qBound(0, settings.value(BOOK_COLOR_OVERLAY_ALPHA, 0).toInt(), 100);
     settings.setValue(BOOK_COLOR_OVERLAY_ALPHA, book_color_overlay_alpha);
 
+    // Wallpaper
     QString wallpaper_color_overlay = settings.value(WALLPAPER_COLOR_OVERLAY, "ffffff").toString();
     settings.setValue(WALLPAPER_COLOR_OVERLAY, wallpaper_color_overlay);
 
     int wallpaper_color_overlay_alpha = qBound(0, settings.value(WALLPAPER_COLOR_OVERLAY_ALPHA, 0).toInt(), 100);
     settings.setValue(WALLPAPER_COLOR_OVERLAY_ALPHA, wallpaper_color_overlay_alpha);
+
+    // Glitch
+    bool glitch_enabled = settings.value(GLITCH_ENABLED, false).toBool();
+    settings.setValue(GLITCH_ENABLED, glitch_enabled);
+
+    int glitch_iterations = qBound(2, settings.value(GLITCH_ITERATIONS, 5).toInt(), 10);
+    settings.setValue(GLITCH_ITERATIONS, glitch_iterations);
+
+    int glitch_quality = qBound(10, settings.value(GLITCH_QUALITY, 80).toInt(), 100);
+    settings.setValue(GLITCH_QUALITY, glitch_quality);
 
     // Save to file
     settings.sync();
@@ -382,8 +398,10 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     QDesktopWidget* desktop_widget = QApplication::desktop();
     QScreen* screen = QGuiApplication::primaryScreen();
     QSize screen_size = screen->size();
-    const int glitch_iterations = 5;
-    const int glitch_quality = 80;
+
+    bool glitch_enabled = settings.value(GLITCH_ENABLED, false).toBool();
+    int glitch_iterations = qBound(2, settings.value(GLITCH_ITERATIONS, 5).toInt(), 10);
+    int glitch_quality = qBound(10, settings.value(GLITCH_QUALITY, 80).toInt(), 100);
 
     if (display_mode & DISPLAY_MODE::Book) {
         // Take screenshot of the current screen if reading
@@ -395,11 +413,18 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
             geometry.width(),
             geometry.height()
         );
-        wallpaper = glitch_pixmap(wallpaper, glitch_iterations, glitch_quality);
+
+        if (glitch_enabled) {
+            wallpaper = glitch_pixmap(wallpaper, glitch_iterations, glitch_quality);
+        }
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
-        QImage img(wallpaper_file);
-        if (!img.isNull()) {
-            wallpaper = QPixmap::fromImage(glitch_image(img, glitch_iterations, glitch_quality));
+        if (glitch_enabled) {
+            QImage img(wallpaper_file);
+            if (!img.isNull()) {
+                wallpaper = QPixmap::fromImage(glitch_image(img, glitch_iterations, glitch_quality));
+            }
+        } else {
+            wallpaper.load(wallpaper_file);
         }
     }
 
