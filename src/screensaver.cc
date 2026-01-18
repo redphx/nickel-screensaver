@@ -226,23 +226,18 @@ QImage glitch_image(const QImage& source, int iterations, int quality = 90) {
 
     // 3. Apply the glitch logic
     iterations = qMax(1, iterations);
-    int data_size = img_size - scan_start - 2;  // Ignore EOI (End of Image), which is 2 bytes: 0xFFD9
-    int chunk_size = data_size / iterations;
 
     static int noise_length = 97;  // prime number
     static QByteArray noise(noise_length, (char)1);
+    int data_size = img_size - scan_start - 2;  // Ignore EOI (End of Image), which is 2 bytes: 0xFFD9
+    int safe_range = data_size - noise_length;
+    if (safe_range <= 0) {
+        return source;
+    }
 
-    for (int i = iterations - 1; i >= 0; --i) {
-        int section_start = scan_start + (chunk_size * i);
-        int current_chunk = (i == iterations - 1) ? (data_size - (chunk_size * i)) : chunk_size;
-        if (current_chunk <= 0) {
-            break;
-        }
-
-        int glitch_index = section_start + (qrand() % current_chunk);
-        if (glitch_index < img_size - 2 - noise_length) {
-            ba.replace(glitch_index, noise_length, noise);
-        }
+    for (int i = 0; i < iterations; ++i) {
+        int glitch_index = scan_start + (qrand() % safe_range);
+        ba.replace(glitch_index, noise_length, noise);
     }
 
     QImage glitched;
