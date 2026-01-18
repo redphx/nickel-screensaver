@@ -203,11 +203,9 @@ bool write_blank_screensaver(const QString &file_path) {
 QImage glitch_image(const QImage& source, int iterations, int quality = 90) {
     // 1. Convert QImage to JPEG byte array
     QByteArray ba;
-    ba.reserve(source.width() * source.height());
-
     QBuffer buffer(&ba);
     buffer.open(QIODevice::WriteOnly);
-    source.save(&buffer, "JPG", quality); 
+    source.save(&buffer, "JPG", quality);
 
     // 2. Find the Start of Scan (SOS) marker: 0xFF 0xDA
     const uchar* data = (const uchar*)ba.constData();
@@ -231,8 +229,8 @@ QImage glitch_image(const QImage& source, int iterations, int quality = 90) {
     int data_size = img_size - scan_start - 2;  // Ignore EOI (End of Image), which is 2 bytes: 0xFFD9
     int chunk_size = data_size / iterations;
 
-    int noise_length = 97;  // prime number
-    QByteArray noise(noise_length, (char)1);
+    static int noise_length = 97;  // prime number
+    static QByteArray noise(noise_length, (char)1);
 
     for (int i = iterations - 1; i >= 0; --i) {
         int section_start = scan_start + (chunk_size * i);
@@ -242,8 +240,8 @@ QImage glitch_image(const QImage& source, int iterations, int quality = 90) {
         }
 
         int glitch_index = section_start + (qrand() % current_chunk);
-        if (glitch_index < img_size - 2) {
-            ba.insert(glitch_index, noise);
+        if (glitch_index < img_size - 2 - noise_length) {
+            ba.replace(glitch_index, noise_length, noise);
         }
     }
 
@@ -394,7 +392,8 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     }
 
     // 5. Handle transparent mode
-    QImage wallpaper;
+    QPixmap wallpaper_pixmap;
+    QImage wallpaper_image;
 
     QDesktopWidget* desktop_widget = QApplication::desktop();
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -407,7 +406,7 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     if (display_mode & DISPLAY_MODE::Book) {
         // Take screenshot of the current screen if reading
         QRect geometry = current_view->geometry();
-        QPixmap screenshot = screen->grabWindow(
+        wallpaper_pixmap = screen->grabWindow(
             desktop_widget->winId(),
             geometry.left(),
             geometry.top(),
@@ -416,18 +415,12 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
         );
 
         if (glitch_enabled) {
-            wallpaper = glitch_pixmap(screenshot, glitch_iterations, glitch_quality);
-        } else {
-            wallpaper = screenshot.toImage();
+            wallpaper_image = glitch_pixmap(wallpaper_pixmap, glitch_iterations, glitch_quality);
         }
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
-        if (glitch_enabled) {
-            QImage img(wallpaper_file);
-            if (!img.isNull()) {
-                wallpaper = glitch_image(img, glitch_iterations, glitch_quality);
-            }
-        } else {
-            wallpaper.load(wallpaper_file);
+        wallpaper_image.load(wallpaper_file);
+        if (glitch_enabled && !wallpaper_image.isNull()) {
+            wallpaper_image = glitch_image(wallpaper_image, glitch_iterations, glitch_quality);
         }
     }
 
@@ -449,12 +442,19 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     QPainter painter(backing); // this will copy the image data if it's referenced somewhere else
 
     // Draw wallpaper
-    if (!wallpaper.isNull()) {
-        if (wallpaper.size() != screen_size) {
+    if (!wallpaper_image.isNull()) {
+        if (wallpaper_image.size() != screen_size) {
             // Only scales if different sizes
-            painter.drawImage(0, 0, wallpaper.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
+            painter.drawImage(0, 0, wallpaper_image.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
         } else {
-            painter.drawImage(0, 0, wallpaper);
+            painter.drawImage(0, 0, wallpaper_image);
+        }
+    } else if (!wallpaper_pixmap.isNull()) {
+        if (wallpaper_pixmap.size() != screen_size) {
+            // Only scales if different sizes
+            painter.drawPixmap(0, 0, wallpaper_pixmap.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
+        } else {
+            painter.drawPixmap(0, 0, wallpaper_pixmap);
         }
     }
 
