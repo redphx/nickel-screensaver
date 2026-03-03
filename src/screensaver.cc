@@ -47,6 +47,8 @@ unsigned char blank_screensaver[] = {
 
 void (*N3PowerWorkflowManager_handleSleep)(N3PowerWorkflowManager* self);
 void (*N3PowerWorkflowManager_showSleepView)(N3PowerWorkflowManager* self);
+void (*N3PowerWorkflowManager_powerOff)(N3PowerWorkflowManager* self, bool low_battery);
+void (*N3PowerWorkflowManager_showPowerOffView)(N3PowerWorkflowManager* self);
 
 void* (*MainWindowController_sharedInstance)();
 QWidget* (*MainWindowController_currentView)(void*);
@@ -117,20 +119,38 @@ bool ns_uninstall() {
 
 struct nh_hook nickelscreensaverHook[] = {
     {
-        .sym     = "_ZN22N3PowerWorkflowManager13showSleepViewEv", 
-        .sym_new = "ns_show_sleep_view",
-        .lib     = "libnickel.so.1.0.0",
-        .out     = nh_symoutptr(N3PowerWorkflowManager_showSleepView),
-        .desc    = "Show sleep view"
+        .sym      = "_ZN22N3PowerWorkflowManager13showSleepViewEv",
+        .sym_new  = "hook_N3PowerWorkflowManager_showSleepView",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_showSleepView),
+        .desc     = "Show Sleep view",
+        .optional = true,
     },
     {
-        .sym     = "_ZN22N3PowerWorkflowManager11handleSleepEv", 
-        .sym_new = "ns_handle_sleep",
-        .lib     = "libnickel.so.1.0.0",
-        .out     = nh_symoutptr(N3PowerWorkflowManager_handleSleep),
-        .desc    = "Handle sleep"
+        .sym      = "_ZN22N3PowerWorkflowManager11handleSleepEv",
+        .sym_new  = "hook_N3PowerWorkflowManager_handleSleep",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_handleSleep),
+        .desc     = "Handle sleep",
+        .optional = true,
     },
-    {0}
+    {
+        .sym      = "_ZN22N3PowerWorkflowManager16showPowerOffViewEv",
+        .sym_new  = "hook_N3PowerWorkflowManager_showPowerOffView",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_showPowerOffView),
+        .desc     = "Show Power Off view",
+        .optional = true,
+    },
+    {
+        .sym      = "_ZN22N3PowerWorkflowManager8powerOffEb",
+        .sym_new  = "hook_N3PowerWorkflowManager_powerOff",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_powerOff),
+        .desc     = "Handle Power off",
+        .optional = true,
+    },
+    {0},
 };
 
 struct nh_dlsym nickelscreensaverDlsym[] = {
@@ -253,8 +273,7 @@ QImage glitch_pixmap(const QPixmap& source, int iterations, int quality = 90) {
     return glitch_image(img, iterations, quality);
 }
 
-extern "C" __attribute__((visibility("default")))
-void ns_handle_sleep(N3PowerWorkflowManager* self) {
+void before_handle(N3PowerWorkflowManager* self) {
     // Reset data
     screensaver_image = QImage();
     is_cover_wallpaper = false;
@@ -266,19 +285,19 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
 
     if (!kobo_screensaver_dir.exists()) {
         // Skip if Kobo's screensaver folder doesn't exist
-        return N3PowerWorkflowManager_handleSleep(self);
+        return;
     }
 
     void *mwc = MainWindowController_sharedInstance();
 	if (!mwc) {
 		nh_log("Invalid MainWindowController");
-		return N3PowerWorkflowManager_handleSleep(self);
+		return;
 	}
 
     QWidget *current_view = MainWindowController_currentView(mwc);
 	if (!current_view) {
 		nh_log("Invalid currentView");
-		return N3PowerWorkflowManager_handleSleep(self);
+		return;
 	}
 
     QString current_view_name = current_view->objectName();
@@ -369,7 +388,7 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
 
     if (display_mode == DISPLAY_MODE::None) {
         // Skip if no files found
-        return N3PowerWorkflowManager_handleSleep(self);
+        return;
     }
 
     // Write Tiny PNG
@@ -383,7 +402,7 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
             screensaver_image.load(wallpaper_file);
         }
 
-        return N3PowerWorkflowManager_handleSleep(self);
+        return;
     }
 
     // 5. Handle transparent mode
@@ -489,10 +508,7 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     // nh_dump_log();
 }
 
-extern "C" __attribute__((visibility("default")))
-void ns_show_sleep_view(N3PowerWorkflowManager* self) {
-    N3PowerWorkflowManager_showSleepView(self);
-
+void after_view_shown() {
     // Remove blank screensaver
     QFile file("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
     file.remove();
@@ -520,6 +536,33 @@ void ns_show_sleep_view(N3PowerWorkflowManager* self) {
         }
     }
 
-
     // BookCoverDragonPowerView_setInfoPanelVisible(current_view, true);
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_handleSleep(N3PowerWorkflowManager* self) {
+    before_handle(self);
+
+    N3PowerWorkflowManager_handleSleep(self);
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_powerOff(N3PowerWorkflowManager* self, bool low_battery) {
+    before_handle(self);
+
+    N3PowerWorkflowManager_powerOff(self, low_battery);
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_showSleepView(N3PowerWorkflowManager* self) {
+    N3PowerWorkflowManager_showSleepView(self);
+
+    after_view_shown();
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_showPowerOffView(N3PowerWorkflowManager* self) {
+    N3PowerWorkflowManager_showPowerOffView(self);
+
+    after_view_shown();
 }
