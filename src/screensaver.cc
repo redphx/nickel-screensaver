@@ -301,6 +301,12 @@ void before_handle(N3PowerWorkflowManager* self) {
 	}
 
     QString current_view_name = current_view->objectName();
+
+    // Don't show overlay again when the current view is Sleep view
+    if (current_view_name.contains("DragonPowerView")) {
+        return;
+    }
+
     // Enable transparent mode when reading
     bool is_reading = current_view_name == QStringLiteral("ReadingView");
 
