@@ -519,6 +519,16 @@ void after_view_shown() {
 
     void *mwc = MainWindowController_sharedInstance();
     QWidget *current_view = MainWindowController_currentView(mwc);
+    if (!current_view) {
+        return;
+    }
+
+    // Avoid adding overlay to the wrong view when unlocking the device instantly
+    // https://github.com/redphx/nickel-screensaver/issues/12
+    QString current_view_name = current_view->objectName();
+    if (!current_view_name.contains(QStringLiteral("DragonPowerView"))) {
+        return;
+    }
 
     // Check if cover mode
     if (is_cover_wallpaper) {
@@ -529,11 +539,9 @@ void after_view_shown() {
             overlay->lower();
             overlay->show();
         }
-    } else {
-        if (!screensaver_image.isNull()) {
-            // Replace current image with the generated screensaver
-            FullScreenDragonPowerView_setImage(current_view, screensaver_image); // will be drawn with QPainter::drawImage
-        }
+    } else if (!screensaver_image.isNull()) {
+        // Replace current image with the generated screensaver
+        FullScreenDragonPowerView_setImage(current_view, screensaver_image); // will be drawn with QPainter::drawImage
     }
 
     // BookCoverDragonPowerView_setInfoPanelVisible(current_view, true);
