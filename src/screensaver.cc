@@ -191,8 +191,8 @@ NickelHook(
 
 // Note: QImage and QPixmap are ref-counted, backing data is COW if more than one reference
 QImage screensaver_image;
-QPixmap screensaver_pixmap;
-bool is_cover_wallpaper = false;
+QPixmap overlay_pixmap;
+bool is_overlay_wallpaper = false;
 
 QString pick_random_file(QDir dir, QStringList filters) {
     if (!dir.exists()) {
@@ -276,7 +276,7 @@ QImage glitch_pixmap(const QPixmap& source, int iterations, int quality = 90) {
 void before_handle(N3PowerWorkflowManager* self) {
     // Reset data
     screensaver_image = QImage();
-    is_cover_wallpaper = false;
+    is_overlay_wallpaper = false;
 
     QString screensaver_path   = "/mnt/onboard/.adds/screensaver";
     QString kobo_screensaver_path = "/mnt/onboard/.kobo/screensaver";
@@ -379,12 +379,12 @@ void before_handle(N3PowerWorkflowManager* self) {
                 display_mode = DISPLAY_MODE::None;
             } else {
                 // Has overlay but not wallpaper -> Set to overlay cover mode
-                is_cover_wallpaper = true;
+                is_overlay_wallpaper = true;
                 display_mode &= ~DISPLAY_MODE::Wallpaper;
             }
         } else {
             if (random_file.endsWith("/cover")) {
-                is_cover_wallpaper = true;
+                is_overlay_wallpaper = true;
                 display_mode &= ~DISPLAY_MODE::Wallpaper;
             } else {
                 wallpaper_file = random_file;
@@ -398,7 +398,7 @@ void before_handle(N3PowerWorkflowManager* self) {
     }
 
     // Write Tiny PNG
-    if (!is_cover_wallpaper) {
+    if (!is_overlay_wallpaper) {
         write_blank_screensaver("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
     }
 
@@ -446,12 +446,12 @@ void before_handle(N3PowerWorkflowManager* self) {
 
     // 6. Combine overlay & wallpaper into target image
     QPaintDevice *backing;
-    if (is_cover_wallpaper) {
-        if (screensaver_pixmap.isNull() || screensaver_pixmap.size() != screen_size) {
-            screensaver_pixmap = QPixmap(screen_size);
+    if (is_overlay_wallpaper) {
+        if (overlay_pixmap.isNull() || overlay_pixmap.size() != screen_size) {
+            overlay_pixmap = QPixmap(screen_size);
         }
-        screensaver_pixmap.fill(QColor("transparent"));
-        backing = &screensaver_pixmap;
+        overlay_pixmap.fill(QColor("transparent"));
+        backing = &overlay_pixmap;
     } else {
         if (screensaver_image.isNull() || screensaver_image.size() != screen_size) {
             screensaver_image = QImage(screen_size, QImage::Format_RGB32);
@@ -519,7 +519,7 @@ void after_view_shown() {
     QFile file("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
     file.remove();
 
-    if (screensaver_pixmap.isNull() && screensaver_image.isNull()) {
+    if (overlay_pixmap.isNull() && screensaver_image.isNull()) {
         return;
     }
 
@@ -537,13 +537,13 @@ void after_view_shown() {
     }
 
     // Check if cover mode
-    if (is_cover_wallpaper) {
-        if (screensaver_pixmap.isNull()) {
+    if (is_overlay_wallpaper) {
+        if (overlay_pixmap.isNull()) {
             return;
         }
 
         QLabel* overlay = new QLabel(current_view);
-        overlay->setPixmap(screensaver_pixmap);
+        overlay->setPixmap(overlay_pixmap);
         overlay->setGeometry(current_view->rect());
         overlay->lower();
         overlay->show();
