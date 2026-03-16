@@ -538,16 +538,28 @@ void after_view_shown() {
 
     // Check if cover mode
     if (is_cover_wallpaper) {
-        if (!screensaver_pixmap.isNull()) {
+        if (screensaver_pixmap.isNull()) {
+            return;
+        }
+
+        QLabel* overlay = new QLabel(current_view);
+        overlay->setPixmap(screensaver_pixmap);
+        overlay->setGeometry(current_view->rect());
+        overlay->lower();
+        overlay->show();
+    } else {
+        if (screensaver_image.isNull()) {
+            return;
+        }
+
+        if (current_view_name == QStringLiteral("FullScreenDragonPowerView")) {
+            FullScreenDragonPowerView_setImage(current_view, screensaver_image);
+        } else {
             QLabel* overlay = new QLabel(current_view);
-            overlay->setPixmap(screensaver_pixmap);
+            overlay->setPixmap(QPixmap::fromImage(screensaver_image));
             overlay->setGeometry(current_view->rect());
-            overlay->lower();
             overlay->show();
         }
-    } else if (!screensaver_image.isNull()) {
-        // Replace current image with the generated screensaver
-        FullScreenDragonPowerView_setImage(current_view, screensaver_image); // will be drawn with QPainter::drawImage
     }
 
     // BookCoverDragonPowerView_setInfoPanelVisible(current_view, true);
