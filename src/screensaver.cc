@@ -14,6 +14,7 @@
 #include <QSettings>
 #include <QFileInfo>
 #include <QBuffer>
+#include <QImageReader>
 
 typedef void N3PowerWorkflowManager;
 typedef void PowerViewController;
@@ -273,6 +274,22 @@ QImage glitch_pixmap(const QPixmap& source, int iterations, int quality = 90) {
     return glitch_image(img, iterations, quality);
 }
 
+QImage load_scaled_image(const QString& file_path, QSize screen_size) {
+    QImageReader reader(file_path);
+    if (reader.canRead()) {
+        QSize img_size = reader.size();
+
+        if (img_size != screen_size) {
+            img_size.scale(screen_size, Qt::KeepAspectRatioByExpanding);
+            reader.setScaledSize(img_size);
+        }
+
+        return reader.read();
+    }
+
+    return QImage();
+}
+
 void before_handle(N3PowerWorkflowManager* self) {
     // Reset data
     screensaver_image = QImage();
@@ -348,6 +365,10 @@ void before_handle(N3PowerWorkflowManager* self) {
     QString overlay_file;
     QString wallpaper_file;
 
+    QDesktopWidget* desktop_widget = QApplication::desktop();
+    QScreen* screen = QGuiApplication::primaryScreen();
+    QSize screen_size = screen->size();
+
     int display_mode = is_reading ? DISPLAY_MODE::Book : DISPLAY_MODE::Wallpaper;
 
     // Pick a random overlay file
@@ -405,7 +426,7 @@ void before_handle(N3PowerWorkflowManager* self) {
     // If not overlay mode -> only load the wallpaper file
     if (!(display_mode & DISPLAY_MODE::Overlay)) {
         if (!wallpaper_file.isEmpty()) {
-            screensaver_image.load(wallpaper_file);
+            screensaver_image = load_scaled_image(wallpaper_file, screen_size);
         }
 
         return;
@@ -414,10 +435,6 @@ void before_handle(N3PowerWorkflowManager* self) {
     // 5. Handle transparent mode
     QPixmap screenshot_pixmap;
     QImage wallpaper_image;
-
-    QDesktopWidget* desktop_widget = QApplication::desktop();
-    QScreen* screen = QGuiApplication::primaryScreen();
-    QSize screen_size = screen->size();
 
     bool glitch_enabled = settings.value(GLITCH_ENABLED, false).toBool();
     int glitch_iterations = qBound(2, settings.value(GLITCH_ITERATIONS, 5).toInt(), 10);
@@ -438,7 +455,8 @@ void before_handle(N3PowerWorkflowManager* self) {
             wallpaper_image = glitch_pixmap(screenshot_pixmap, glitch_iterations, glitch_quality);
         }
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
-        wallpaper_image.load(wallpaper_file);
+        wallpaper_image = load_scaled_image(wallpaper_file, screen_size);
+
         if (glitch_enabled && !wallpaper_image.isNull()) {
             wallpaper_image = glitch_image(wallpaper_image, glitch_iterations, glitch_quality);
         }
@@ -459,16 +477,14 @@ void before_handle(N3PowerWorkflowManager* self) {
         screensaver_image.fill(Qt::white);
         backing = &screensaver_image;
     }
+
     QPainter painter(backing); // this will copy the image data if it's referenced somewhere else
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
 
     // Draw wallpaper
     if (!wallpaper_image.isNull()) {
-        if (wallpaper_image.size() != screen_size) {
-            // Only scale if size mismatch
-            painter.drawImage(0, 0, wallpaper_image.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
-        } else {
-            painter.drawImage(0, 0, wallpaper_image);
-        }
+        nh_log("wallpaper_image %d %d", wallpaper_image.width(), wallpaper_image.height());
+        painter.drawImage(0, 0, wallpaper_image);
     } else if (!screenshot_pixmap.isNull()) {
         if (screenshot_pixmap.size() != screen_size) {
             // Only scale if size mismatch
