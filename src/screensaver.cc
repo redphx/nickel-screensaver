@@ -456,10 +456,6 @@ void before_handle(N3PowerWorkflowManager* self) {
         }
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
         wallpaper_image = load_scaled_image(wallpaper_file, screen_size);
-
-        if (glitch_enabled && !wallpaper_image.isNull()) {
-            wallpaper_image = glitch_image(wallpaper_image, glitch_iterations, glitch_quality);
-        }
     }
 
     // 6. Combine overlay & wallpaper into target image
