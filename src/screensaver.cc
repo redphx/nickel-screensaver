@@ -412,7 +412,7 @@ void before_handle(N3PowerWorkflowManager* self) {
     }
 
     // 5. Handle transparent mode
-    QPixmap wallpaper_pixmap;
+    QPixmap screenshot_pixmap;
     QImage wallpaper_image;
 
     QDesktopWidget* desktop_widget = QApplication::desktop();
@@ -426,7 +426,7 @@ void before_handle(N3PowerWorkflowManager* self) {
     if (display_mode & DISPLAY_MODE::Book) {
         // Take screenshot of the current screen if reading
         QRect geometry = current_view->geometry();
-        wallpaper_pixmap = screen->grabWindow(
+        screenshot_pixmap = screen->grabWindow(
             desktop_widget->winId(),
             geometry.left(),
             geometry.top(),
@@ -435,7 +435,7 @@ void before_handle(N3PowerWorkflowManager* self) {
         );
 
         if (glitch_enabled) {
-            wallpaper_image = glitch_pixmap(wallpaper_pixmap, glitch_iterations, glitch_quality);
+            wallpaper_image = glitch_pixmap(screenshot_pixmap, glitch_iterations, glitch_quality);
         }
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
         wallpaper_image.load(wallpaper_file);
@@ -450,13 +450,13 @@ void before_handle(N3PowerWorkflowManager* self) {
         if (overlay_pixmap.isNull() || overlay_pixmap.size() != screen_size) {
             overlay_pixmap = QPixmap(screen_size);
         }
-        overlay_pixmap.fill(QColor("transparent"));
+        overlay_pixmap.fill(Qt::transparent);
         backing = &overlay_pixmap;
     } else {
         if (screensaver_image.isNull() || screensaver_image.size() != screen_size) {
             screensaver_image = QImage(screen_size, QImage::Format_RGB32);
         }
-        screensaver_image.fill(QColor("white"));
+        screensaver_image.fill(Qt::white);
         backing = &screensaver_image;
     }
     QPainter painter(backing); // this will copy the image data if it's referenced somewhere else
@@ -464,17 +464,17 @@ void before_handle(N3PowerWorkflowManager* self) {
     // Draw wallpaper
     if (!wallpaper_image.isNull()) {
         if (wallpaper_image.size() != screen_size) {
-            // Only scales if different sizes
+            // Only scale if size mismatch
             painter.drawImage(0, 0, wallpaper_image.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
         } else {
             painter.drawImage(0, 0, wallpaper_image);
         }
-    } else if (!wallpaper_pixmap.isNull()) {
-        if (wallpaper_pixmap.size() != screen_size) {
-            // Only scales if different sizes
-            painter.drawPixmap(0, 0, wallpaper_pixmap.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
+    } else if (!screenshot_pixmap.isNull()) {
+        if (screenshot_pixmap.size() != screen_size) {
+            // Only scale if size mismatch
+            painter.drawPixmap(0, 0, screenshot_pixmap.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
         } else {
-            painter.drawPixmap(0, 0, wallpaper_pixmap);
+            painter.drawPixmap(0, 0, screenshot_pixmap);
         }
     }
 
