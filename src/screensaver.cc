@@ -538,23 +538,21 @@ void after_view_shown() {
 
     // Check if cover mode
     if (is_overlay_wallpaper) {
-        if (overlay_pixmap.isNull()) {
-            return;
+        if (!overlay_pixmap.isNull()) {
+            QLabel* overlay = new QLabel(current_view);
+            overlay->setPixmap(overlay_pixmap);
+            overlay->setGeometry(current_view->rect());
+            if (current_view_name != QStringLiteral("FramedDragonPowerView")) {
+                // Not reading Instapaper article
+                overlay->lower();
+            }
+            overlay->show();
         }
-
-        QLabel* overlay = new QLabel(current_view);
-        overlay->setPixmap(overlay_pixmap);
-        overlay->setGeometry(current_view->rect());
-        overlay->lower();
-        overlay->show();
-    } else {
-        if (screensaver_image.isNull()) {
-            return;
-        }
-
-        if (current_view_name == QStringLiteral("FullScreenDragonPowerView")) {
+    } else if (!screensaver_image.isNull()) {
+        if (current_view_name == QStringLiteral("BookCoverDragonPowerView") && FullScreenDragonPowerView_setImage) {
             FullScreenDragonPowerView_setImage(current_view, screensaver_image);
-        } else {
+        } else if (current_view_name == QStringLiteral("FramedDragonPowerView")) {
+            // Instapaper
             QLabel* overlay = new QLabel(current_view);
             overlay->setPixmap(QPixmap::fromImage(screensaver_image));
             overlay->setGeometry(current_view->rect());
