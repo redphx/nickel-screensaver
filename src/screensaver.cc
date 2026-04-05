@@ -86,7 +86,7 @@ void save_settings(QSettings &settings) {
     int glitch_iterations = qBound(2, settings.value(GLITCH_ITERATIONS, 5).toInt(), 10);
     settings.setValue(GLITCH_ITERATIONS, glitch_iterations);
 
-    int glitch_quality = qBound(10, settings.value(GLITCH_QUALITY, 80).toInt(), 100);
+    int glitch_quality = qBound(10, settings.value(GLITCH_QUALITY, 10).toInt(), 100);
     settings.setValue(GLITCH_QUALITY, glitch_quality);
 
     // Save to file
