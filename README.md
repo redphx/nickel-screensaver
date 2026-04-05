@@ -143,7 +143,22 @@ ColorOverlayAlpha=0
 ColorOverlay=ffffff
 ; Same as Book.ColorOverlayAlpha setting
 ColorOverlayAlpha=0
+
+[Glitch]
+; Enable/disable the glitching effect on book page
+; Value: true/false
+Enabled=false
+; The number of iterations
+; Value ranges from 2 to 10 (default: 5, lower is faster)
+Iterations=5
+; Quality of the glitched image
+; Value ranges from 10 to 100 (default: 10, lower is faster)
+Quality=10
 ```
+
+Demonstration of the glitch effect
+
+https://github.com/user-attachments/assets/69aacdb3-d767-44d5-8283-02d6ab486f4d
 
 # FAQs
 1. **Can I still use NickelMenu to toggle the Screensaver feature?**  
@@ -219,3 +234,12 @@ docker run --volume="$PWD:$PWD" --user="$(id -u):$(id -g)" --workdir="$PWD" --en
 
 - Thanks to **pgaskin** for his [NickelHook](https://github.com/pgaskin/NickelHook) project
 - Thanks to the creators of these projects for their sample code: [shermp/NickelClock](https://github.com/shermp/NickelClock), [tsowell/kobo-btpt](https://github.com/tsowell/kobo-btpt)  
+
+# ✨ Other Kobo projects from me
+
+- [Chokobo](https://github.com/redphx/chokobo): setup your own free, personal, private utility to convert epub books to kepub on Dropbox for Kobo e-readers (alternative to [send.djazz.se](https://send.djazz.se))
+- [Kobo Tweaks](https://github.com/redphx/kobo-tweaks): a beginner-friendly addon for customizing Kobo eReaders.
+
+<center>
+  <img height="500" alt="image" src="https://github.com/redphx/kobo-tweaks/raw/main/resources/screenshots/demo-after.png" />
+</center>
