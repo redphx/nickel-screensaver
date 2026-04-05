@@ -14,6 +14,7 @@
 #include <QSettings>
 #include <QFileInfo>
 #include <QBuffer>
+#include <QImageReader>
 
 typedef void N3PowerWorkflowManager;
 typedef void PowerViewController;
@@ -47,6 +48,8 @@ unsigned char blank_screensaver[] = {
 
 void (*N3PowerWorkflowManager_handleSleep)(N3PowerWorkflowManager* self);
 void (*N3PowerWorkflowManager_showSleepView)(N3PowerWorkflowManager* self);
+void (*N3PowerWorkflowManager_powerOff)(N3PowerWorkflowManager* self, bool low_battery);
+void (*N3PowerWorkflowManager_showPowerOffView)(N3PowerWorkflowManager* self);
 
 void* (*MainWindowController_sharedInstance)();
 QWidget* (*MainWindowController_currentView)(void*);
@@ -83,7 +86,7 @@ void save_settings(QSettings &settings) {
     int glitch_iterations = qBound(2, settings.value(GLITCH_ITERATIONS, 5).toInt(), 10);
     settings.setValue(GLITCH_ITERATIONS, glitch_iterations);
 
-    int glitch_quality = qBound(10, settings.value(GLITCH_QUALITY, 80).toInt(), 100);
+    int glitch_quality = qBound(10, settings.value(GLITCH_QUALITY, 10).toInt(), 100);
     settings.setValue(GLITCH_QUALITY, glitch_quality);
 
     // Save to file
@@ -117,20 +120,38 @@ bool ns_uninstall() {
 
 struct nh_hook nickelscreensaverHook[] = {
     {
-        .sym     = "_ZN22N3PowerWorkflowManager13showSleepViewEv", 
-        .sym_new = "ns_show_sleep_view",
-        .lib     = "libnickel.so.1.0.0",
-        .out     = nh_symoutptr(N3PowerWorkflowManager_showSleepView),
-        .desc    = "Show sleep view"
+        .sym      = "_ZN22N3PowerWorkflowManager13showSleepViewEv",
+        .sym_new  = "hook_N3PowerWorkflowManager_showSleepView",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_showSleepView),
+        .desc     = "Show Sleep view",
+        .optional = true,
     },
     {
-        .sym     = "_ZN22N3PowerWorkflowManager11handleSleepEv", 
-        .sym_new = "ns_handle_sleep",
-        .lib     = "libnickel.so.1.0.0",
-        .out     = nh_symoutptr(N3PowerWorkflowManager_handleSleep),
-        .desc    = "Handle sleep"
+        .sym      = "_ZN22N3PowerWorkflowManager11handleSleepEv",
+        .sym_new  = "hook_N3PowerWorkflowManager_handleSleep",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_handleSleep),
+        .desc     = "Handle sleep",
+        .optional = true,
     },
-    {0}
+    {
+        .sym      = "_ZN22N3PowerWorkflowManager16showPowerOffViewEv",
+        .sym_new  = "hook_N3PowerWorkflowManager_showPowerOffView",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_showPowerOffView),
+        .desc     = "Show Power Off view",
+        .optional = true,
+    },
+    {
+        .sym      = "_ZN22N3PowerWorkflowManager8powerOffEb",
+        .sym_new  = "hook_N3PowerWorkflowManager_powerOff",
+        .lib      = "libnickel.so.1.0.0",
+        .out      = nh_symoutptr(N3PowerWorkflowManager_powerOff),
+        .desc     = "Handle Power off",
+        .optional = true,
+    },
+    {0},
 };
 
 struct nh_dlsym nickelscreensaverDlsym[] = {
@@ -171,8 +192,8 @@ NickelHook(
 
 // Note: QImage and QPixmap are ref-counted, backing data is COW if more than one reference
 QImage screensaver_image;
-QPixmap screensaver_pixmap;
-bool is_cover_wallpaper = false;
+QPixmap overlay_pixmap;
+bool is_overlay_wallpaper = false;
 
 QString pick_random_file(QDir dir, QStringList filters) {
     if (!dir.exists()) {
@@ -253,11 +274,26 @@ QImage glitch_pixmap(const QPixmap& source, int iterations, int quality = 90) {
     return glitch_image(img, iterations, quality);
 }
 
-extern "C" __attribute__((visibility("default")))
-void ns_handle_sleep(N3PowerWorkflowManager* self) {
+QImage load_scaled_image(const QString& file_path, QSize screen_size) {
+    QImageReader reader(file_path);
+    if (reader.canRead()) {
+        QSize img_size = reader.size();
+
+        if (img_size != screen_size) {
+            img_size.scale(screen_size, Qt::KeepAspectRatioByExpanding);
+            reader.setScaledSize(img_size);
+        }
+
+        return reader.read();
+    }
+
+    return QImage();
+}
+
+void before_handle(N3PowerWorkflowManager* self) {
     // Reset data
     screensaver_image = QImage();
-    is_cover_wallpaper = false;
+    is_overlay_wallpaper = false;
 
     QString screensaver_path   = "/mnt/onboard/.adds/screensaver";
     QString kobo_screensaver_path = "/mnt/onboard/.kobo/screensaver";
@@ -266,22 +302,28 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
 
     if (!kobo_screensaver_dir.exists()) {
         // Skip if Kobo's screensaver folder doesn't exist
-        return N3PowerWorkflowManager_handleSleep(self);
+        return;
     }
 
     void *mwc = MainWindowController_sharedInstance();
 	if (!mwc) {
 		nh_log("Invalid MainWindowController");
-		return N3PowerWorkflowManager_handleSleep(self);
+		return;
 	}
 
     QWidget *current_view = MainWindowController_currentView(mwc);
 	if (!current_view) {
 		nh_log("Invalid currentView");
-		return N3PowerWorkflowManager_handleSleep(self);
+		return;
 	}
 
     QString current_view_name = current_view->objectName();
+
+    // Don't show overlay again when the current view is Sleep view
+    if (current_view_name.contains("DragonPowerView")) {
+        return;
+    }
+
     // Enable transparent mode when reading
     bool is_reading = current_view_name == QStringLiteral("ReadingView");
 
@@ -323,6 +365,10 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     QString overlay_file;
     QString wallpaper_file;
 
+    QDesktopWidget* desktop_widget = QApplication::desktop();
+    QScreen* screen = QGuiApplication::primaryScreen();
+    QSize screen_size = screen->size();
+
     int display_mode = is_reading ? DISPLAY_MODE::Book : DISPLAY_MODE::Wallpaper;
 
     // Pick a random overlay file
@@ -354,12 +400,12 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
                 display_mode = DISPLAY_MODE::None;
             } else {
                 // Has overlay but not wallpaper -> Set to overlay cover mode
-                is_cover_wallpaper = true;
+                is_overlay_wallpaper = true;
                 display_mode &= ~DISPLAY_MODE::Wallpaper;
             }
         } else {
             if (random_file.endsWith("/cover")) {
-                is_cover_wallpaper = true;
+                is_overlay_wallpaper = true;
                 display_mode &= ~DISPLAY_MODE::Wallpaper;
             } else {
                 wallpaper_file = random_file;
@@ -369,30 +415,26 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
 
     if (display_mode == DISPLAY_MODE::None) {
         // Skip if no files found
-        return N3PowerWorkflowManager_handleSleep(self);
+        return;
     }
 
     // Write Tiny PNG
-    if (!is_cover_wallpaper) {
+    if (!is_overlay_wallpaper) {
         write_blank_screensaver("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
     }
 
     // If not overlay mode -> only load the wallpaper file
     if (!(display_mode & DISPLAY_MODE::Overlay)) {
         if (!wallpaper_file.isEmpty()) {
-            screensaver_image.load(wallpaper_file);
+            screensaver_image = load_scaled_image(wallpaper_file, screen_size);
         }
 
-        return N3PowerWorkflowManager_handleSleep(self);
+        return;
     }
 
     // 5. Handle transparent mode
-    QPixmap wallpaper_pixmap;
+    QPixmap screenshot_pixmap;
     QImage wallpaper_image;
-
-    QDesktopWidget* desktop_widget = QApplication::desktop();
-    QScreen* screen = QGuiApplication::primaryScreen();
-    QSize screen_size = screen->size();
 
     bool glitch_enabled = settings.value(GLITCH_ENABLED, false).toBool();
     int glitch_iterations = qBound(2, settings.value(GLITCH_ITERATIONS, 5).toInt(), 10);
@@ -401,7 +443,7 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     if (display_mode & DISPLAY_MODE::Book) {
         // Take screenshot of the current screen if reading
         QRect geometry = current_view->geometry();
-        wallpaper_pixmap = screen->grabWindow(
+        screenshot_pixmap = screen->grabWindow(
             desktop_widget->winId(),
             geometry.left(),
             geometry.top(),
@@ -410,46 +452,41 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
         );
 
         if (glitch_enabled) {
-            wallpaper_image = glitch_pixmap(wallpaper_pixmap, glitch_iterations, glitch_quality);
+            wallpaper_image = glitch_pixmap(screenshot_pixmap, glitch_iterations, glitch_quality);
         }
     } else if (display_mode & DISPLAY_MODE::Wallpaper and !wallpaper_file.isEmpty()) {
-        wallpaper_image.load(wallpaper_file);
-        if (glitch_enabled && !wallpaper_image.isNull()) {
-            wallpaper_image = glitch_image(wallpaper_image, glitch_iterations, glitch_quality);
-        }
+        wallpaper_image = load_scaled_image(wallpaper_file, screen_size);
     }
 
     // 6. Combine overlay & wallpaper into target image
     QPaintDevice *backing;
-    if (is_cover_wallpaper) {
-        if (screensaver_pixmap.isNull() || screensaver_pixmap.size() != screen_size) {
-            screensaver_pixmap = QPixmap(screen_size);
+    if (is_overlay_wallpaper) {
+        if (overlay_pixmap.isNull() || overlay_pixmap.size() != screen_size) {
+            overlay_pixmap = QPixmap(screen_size);
         }
-        screensaver_pixmap.fill(QColor("transparent"));
-        backing = &screensaver_pixmap;
+        overlay_pixmap.fill(Qt::transparent);
+        backing = &overlay_pixmap;
     } else {
         if (screensaver_image.isNull() || screensaver_image.size() != screen_size) {
             screensaver_image = QImage(screen_size, QImage::Format_RGB32);
         }
-        screensaver_image.fill(QColor("white"));
+        screensaver_image.fill(Qt::white);
         backing = &screensaver_image;
     }
+
     QPainter painter(backing); // this will copy the image data if it's referenced somewhere else
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
 
     // Draw wallpaper
     if (!wallpaper_image.isNull()) {
-        if (wallpaper_image.size() != screen_size) {
-            // Only scales if different sizes
-            painter.drawImage(0, 0, wallpaper_image.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
+        nh_log("wallpaper_image %d %d", wallpaper_image.width(), wallpaper_image.height());
+        painter.drawImage(0, 0, wallpaper_image);
+    } else if (!screenshot_pixmap.isNull()) {
+        if (screenshot_pixmap.size() != screen_size) {
+            // Only scale if size mismatch
+            painter.drawPixmap(0, 0, screenshot_pixmap.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
         } else {
-            painter.drawImage(0, 0, wallpaper_image);
-        }
-    } else if (!wallpaper_pixmap.isNull()) {
-        if (wallpaper_pixmap.size() != screen_size) {
-            // Only scales if different sizes
-            painter.drawPixmap(0, 0, wallpaper_pixmap.scaled(screen_size, Qt::KeepAspectRatioByExpanding, Qt::FastTransformation));
-        } else {
-            painter.drawPixmap(0, 0, wallpaper_pixmap);
+            painter.drawPixmap(0, 0, screenshot_pixmap);
         }
     }
 
@@ -489,37 +526,79 @@ void ns_handle_sleep(N3PowerWorkflowManager* self) {
     // nh_dump_log();
 }
 
-extern "C" __attribute__((visibility("default")))
-void ns_show_sleep_view(N3PowerWorkflowManager* self) {
-    N3PowerWorkflowManager_showSleepView(self);
-
+void after_view_shown() {
     // Remove blank screensaver
     QFile file("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
     file.remove();
 
-    if (screensaver_pixmap.isNull() && screensaver_image.isNull()) {
+    if (overlay_pixmap.isNull() && screensaver_image.isNull()) {
         return;
     }
 
     void *mwc = MainWindowController_sharedInstance();
     QWidget *current_view = MainWindowController_currentView(mwc);
+    if (!current_view) {
+        return;
+    }
+
+    // Avoid adding overlay to the wrong view when unlocking the device instantly
+    // https://github.com/redphx/nickel-screensaver/issues/12
+    QString current_view_name = current_view->objectName();
+    if (!current_view_name.contains(QStringLiteral("DragonPowerView"))) {
+        return;
+    }
 
     // Check if cover mode
-    if (is_cover_wallpaper) {
-        if (!screensaver_pixmap.isNull()) {
+    if (is_overlay_wallpaper) {
+        if (!overlay_pixmap.isNull()) {
             QLabel* overlay = new QLabel(current_view);
-            overlay->setPixmap(screensaver_pixmap);
+            overlay->setPixmap(overlay_pixmap);
             overlay->setGeometry(current_view->rect());
-            overlay->lower();
+            if (current_view_name != QStringLiteral("FramedDragonPowerView")) {
+                // Not reading Instapaper article
+                overlay->lower();
+            }
             overlay->show();
         }
-    } else {
-        if (!screensaver_image.isNull()) {
-            // Replace current image with the generated screensaver
-            FullScreenDragonPowerView_setImage(current_view, screensaver_image); // will be drawn with QPainter::drawImage
+    } else if (!screensaver_image.isNull()) {
+        if (current_view_name == QStringLiteral("BookCoverDragonPowerView") && FullScreenDragonPowerView_setImage) {
+            FullScreenDragonPowerView_setImage(current_view, screensaver_image);
+        } else if (current_view_name == QStringLiteral("FramedDragonPowerView")) {
+            // Instapaper
+            QLabel* overlay = new QLabel(current_view);
+            overlay->setPixmap(QPixmap::fromImage(screensaver_image));
+            overlay->setGeometry(current_view->rect());
+            overlay->show();
         }
     }
 
-
     // BookCoverDragonPowerView_setInfoPanelVisible(current_view, true);
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_handleSleep(N3PowerWorkflowManager* self) {
+    before_handle(self);
+
+    N3PowerWorkflowManager_handleSleep(self);
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_powerOff(N3PowerWorkflowManager* self, bool low_battery) {
+    before_handle(self);
+
+    N3PowerWorkflowManager_powerOff(self, low_battery);
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_showSleepView(N3PowerWorkflowManager* self) {
+    N3PowerWorkflowManager_showSleepView(self);
+
+    after_view_shown();
+}
+
+extern "C" __attribute__((visibility("default")))
+void hook_N3PowerWorkflowManager_showPowerOffView(N3PowerWorkflowManager* self) {
+    N3PowerWorkflowManager_showPowerOffView(self);
+
+    after_view_shown();
 }
