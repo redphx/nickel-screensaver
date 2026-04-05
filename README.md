@@ -156,6 +156,10 @@ Iterations=5
 Quality=10
 ```
 
+Demonstration of the glitch effect
+
+https://github.com/user-attachments/assets/69aacdb3-d767-44d5-8283-02d6ab486f4d
+
 # FAQs
 1. **Can I still use NickelMenu to toggle the Screensaver feature?**  
 Yes! Nickel Screensaver won't run when the `.kobo/screensaver` folder is missing.
@@ -237,5 +241,5 @@ docker run --volume="$PWD:$PWD" --user="$(id -u):$(id -g)" --workdir="$PWD" --en
 - [Kobo Tweaks](https://github.com/redphx/kobo-tweaks): a beginner-friendly addon for customizing Kobo eReaders.
 
 <center>
-  <img height="500" alt="image" src="https://github.com/redphx/kobo-tweaks/raw/main/resources/screenshots/demo-before.png" /><img height="500" alt="image" src="https://github.com/redphx/kobo-tweaks/raw/main/resources/screenshots/demo-after.png" />
+  <img height="500" alt="image" src="https://github.com/redphx/kobo-tweaks/raw/main/resources/screenshots/demo-after.png" />
 </center>
