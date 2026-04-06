@@ -196,7 +196,7 @@ Since version 1.2, Nickel Screensaver no longer writes screensavers into disk. N
 # How to disable or uninstall  
 To temporary disable Nickel Screensaver, simply turn off the Kobo screensaver feature, or rename the `.kobo/screensaver` folder to something else (you can do this with [NickelMenu](https://github.com/pgaskin/NickelMenu)).  
 
-To uninstall, put a file named `uninstall.txt` in the `.adds/screensaver` folder, then reboot the device.
+To uninstall, put a file named `uninstall.txt` in the `.adds/screensaver` folder, then reboot the device. You may also need to delete the `.kobo/screensaver/nickel-screensaver.png` file manually.
 
 <pre>
 .adds/
