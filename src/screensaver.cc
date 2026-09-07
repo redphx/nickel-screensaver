@@ -15,10 +15,15 @@
 #include <QFileInfo>
 #include <QBuffer>
 #include <QImageReader>
+#include <QTimer>
+#include <QFont>
+#include <QEvent>
+#include <cstdint>
 
 typedef void N3PowerWorkflowManager;
 typedef void PowerViewController;
 typedef QWidget BookCoverDragonPowerView;
+typedef QObject HardwareInterface;
 
 constexpr const char* BOOK_COLOR_OVERLAY            = "Book/ColorOverlay";
 constexpr const char* BOOK_COLOR_OVERLAY_ALPHA      = "Book/ColorOverlayAlpha";
@@ -28,6 +33,8 @@ constexpr const char* WALLPAPER_COLOR_OVERLAY_ALPHA = "Wallpaper/ColorOverlayAlp
 constexpr const char* GLITCH_ENABLED    = "Glitch/Enabled";
 constexpr const char* GLITCH_ITERATIONS = "Glitch/Iterations";
 constexpr const char* GLITCH_QUALITY    = "Glitch/Quality";
+
+constexpr const char* BATTERY_ENABLED = "Battery/Enabled";
 
 enum DISPLAY_MODE {
     None      = 0b00000,
@@ -56,6 +63,9 @@ QWidget* (*MainWindowController_currentView)(void*);
 void (*BookCoverDragonPowerView_setInfoPanelVisible)(BookCoverDragonPowerView* self, bool visible);
 void (*FullScreenDragonPowerView_setImage)(QWidget* self, const QImage& img);
 void (*FullScreenDragonPowerView_setInfoPanelVisible)(QWidget* self, bool visible);
+HardwareInterface* (*HardwareFactory_sharedInstance)();
+std::uintptr_t** HardwareInterface_vtable;
+uint (*HardwareInterface_chargingState)(HardwareInterface* self);
 
 
 struct nh_info nickelscreensaver = {
@@ -88,6 +98,10 @@ void save_settings(QSettings &settings) {
 
     int glitch_quality = qBound(10, settings.value(GLITCH_QUALITY, 10).toInt(), 100);
     settings.setValue(GLITCH_QUALITY, glitch_quality);
+
+    // Battery
+    bool battery_enabled = settings.value(BATTERY_ENABLED, true).toBool();
+    settings.setValue(BATTERY_ENABLED, battery_enabled);
 
     // Save to file
     settings.sync();
@@ -179,6 +193,24 @@ struct nh_dlsym nickelscreensaverDlsym[] = {
         .desc = "",
         .optional = true,
     },
+	{
+		.name = "_ZN15HardwareFactory14sharedInstanceEv",
+		.out  = nh_symoutptr(HardwareFactory_sharedInstance),
+		.desc = "HardwareFactory::sharedInstance()",
+		.optional = true,
+	},
+	{
+		.name = "_ZTV17HardwareInterface",
+		.out  = nh_symoutptr(HardwareInterface_vtable),
+		.desc = "HardwareInterface::vtable",
+		.optional = true,
+	},
+	{
+		.name = "_ZN17HardwareInterface13chargingStateEv",
+		.out  = nh_symoutptr(HardwareInterface_chargingState),
+		.desc = "HardwareInterface::chargingState()",
+		.optional = true,
+	},
 	{0}
 };
 
@@ -194,6 +226,214 @@ NickelHook(
 QImage screensaver_image;
 QPixmap overlay_pixmap;
 bool is_overlay_wallpaper = false;
+
+QByteArray read_power_supply_value(const QString &path, const QString &name) {
+    QFile file(path + '/' + name);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QByteArray();
+    }
+
+    return file.readAll().trimmed();
+}
+
+qint64 read_power_supply_number(const QString &path, const QString &name) {
+    bool ok = false;
+    qint64 value = read_power_supply_value(path, name).toLongLong(&ok);
+    return ok ? value : -1;
+}
+
+QString find_battery_path() {
+    static const QStringList paths = {
+        "/sys/class/power_supply/battery",
+        "/sys/class/power_supply/bd71827_bat",
+        "/sys/class/power_supply/mc13892_bat",
+    };
+
+    for (const QString &path : paths) {
+        if (QFileInfo(path + "/capacity").exists() && QFileInfo(path + "/status").exists()) {
+            return path;
+        }
+    }
+
+    return "";
+}
+
+template <typename F>
+F get_derived_hardware_method(F interface_method, HardwareInterface *hardware) {
+    struct VPtr {
+        std::uintptr_t **v;
+    };
+
+    if (!interface_method || !hardware || !HardwareInterface_vtable) {
+        return nullptr;
+    }
+
+    std::uintptr_t **interface_vtable = HardwareInterface_vtable + 2;
+    for (int offset = 0; offset < 64; ++offset) {
+        if (interface_vtable[offset] == reinterpret_cast<std::uintptr_t*>(interface_method)) {
+            VPtr *derived = reinterpret_cast<VPtr*>(hardware);
+            return reinterpret_cast<F>(derived->v[offset]);
+        }
+    }
+
+    return nullptr;
+}
+
+qint64 charging_minutes_remaining(const QString &path) {
+    qint64 seconds = read_power_supply_number(path, "time_to_full_now");
+    if (seconds < 0) {
+        return -1;
+    }
+
+    return (seconds + 59) / 60;
+}
+
+QString format_duration(qint64 minutes) {
+    if (minutes < 60) {
+        return QStringLiteral("%1m").arg(minutes);
+    }
+
+    qint64 hours = minutes / 60;
+    qint64 remaining_minutes = minutes % 60;
+    if (remaining_minutes == 0) {
+        return QStringLiteral("%1h").arg(hours);
+    }
+
+    return QStringLiteral("%1h %2m").arg(hours).arg(remaining_minutes);
+}
+
+ChargingOverlay::ChargingOverlay(QWidget *parent)
+    : QLabel(parent),
+      battery_path(find_battery_path()),
+      refresh_timer(),
+      hardware(nullptr),
+      charging_state(nullptr) {
+    setObjectName(QStringLiteral("nickelChargingOverlay"));
+    setAlignment(Qt::AlignCenter);
+    parent->installEventFilter(this);
+    update_geometry();
+
+    QFont overlay_font = font();
+    overlay_font.setPixelSize(qMax(20, parent->width() / 32));
+    overlay_font.setBold(true);
+    setFont(overlay_font);
+    setStyleSheet(QStringLiteral(
+        "color: black; background-color: rgba(255, 255, 255, 190); padding: 8px;"));
+
+    refresh_timer.setInterval(60 * 1000);
+    refresh_timer.setTimerType(Qt::PreciseTimer);
+    connect(&refresh_timer, SIGNAL(timeout()), this, SLOT(refresh()));
+
+    hardware = HardwareFactory_sharedInstance ? HardwareFactory_sharedInstance() : nullptr;
+    if (hardware) {
+        charging_state = get_derived_hardware_method(HardwareInterface_chargingState, hardware);
+        bool signals_connected = true;
+        if (!connect(hardware, SIGNAL(usb_plugged()), this, SLOT(refresh()))) {
+            signals_connected = false;
+        }
+        if (!connect(hardware, SIGNAL(usb_ac_plugged()), this, SLOT(refresh()))) {
+            signals_connected = false;
+        }
+        if (!connect(hardware, SIGNAL(usb_unplugged()), this, SLOT(usb_unplugged()))) {
+            signals_connected = false;
+        }
+        if (!connect(hardware, SIGNAL(usb_ac_unplugged()), this, SLOT(usb_unplugged()))) {
+            signals_connected = false;
+        }
+        if (!connect(hardware, SIGNAL(battery_changed()), this, SLOT(refresh()))) {
+            signals_connected = false;
+        }
+        if (!connect(hardware, SIGNAL(battery_level(int)), this, SLOT(refresh()))) {
+            signals_connected = false;
+        }
+        if (!signals_connected) {
+            nh_log("Could not connect all charging overlay USB signals");
+        }
+    }
+
+    refresh();
+}
+
+bool ChargingOverlay::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == parentWidget() && event->type() == QEvent::Resize) {
+        update_geometry();
+    }
+
+    return QLabel::eventFilter(watched, event);
+}
+
+void ChargingOverlay::update_geometry() {
+    QWidget *view = parentWidget();
+    if (!view) {
+        return;
+    }
+
+    setGeometry(view->width() / 10, view->height() / 30,
+                view->width() * 8 / 10, view->height() / 14);
+}
+
+void ChargingOverlay::refresh() {
+    if (!hardware || !charging_state) {
+        refresh_timer.stop();
+        hide();
+        return;
+    }
+
+    if (charging_state(hardware) == 0) {
+        refresh_timer.stop();
+        hide();
+        return;
+    }
+
+    if (!refresh_timer.isActive()) {
+        refresh_timer.start();
+    }
+
+    if (battery_path.isEmpty()) {
+        battery_path = find_battery_path();
+    }
+    if (battery_path.isEmpty()) {
+        hide();
+        return;
+    }
+
+    qint64 capacity = read_power_supply_number(battery_path, "capacity");
+    if (capacity < 0) {
+        hide();
+        return;
+    }
+
+    QByteArray status;
+    if (capacity < 100) {
+        status = read_power_supply_value(battery_path, "status");
+    }
+
+    QString text;
+    if (status == "Full" || capacity >= 100) {
+        text = QStringLiteral("%1% | Fully charged").arg(capacity);
+    } else if (status == "Charging") {
+        text = QStringLiteral("%1% | Charging").arg(capacity);
+        qint64 minutes = charging_minutes_remaining(battery_path);
+        if (minutes >= 0) {
+            text += QStringLiteral(" | %1 until full").arg(format_duration(minutes));
+        }
+    } else {
+        text = QStringLiteral("%1% | Plugged in").arg(capacity);
+    }
+
+    if (text != this->text()) {
+        setText(text);
+    }
+    if (!isVisible()) {
+        raise();
+        show();
+    }
+}
+
+void ChargingOverlay::usb_unplugged() {
+    refresh_timer.stop();
+    hide();
+}
 
 QString pick_random_file(QDir dir, QStringList filters) {
     if (!dir.exists()) {
@@ -526,14 +766,10 @@ void before_handle(N3PowerWorkflowManager* self) {
     // nh_dump_log();
 }
 
-void after_view_shown() {
+void after_view_shown(bool allow_charging_overlay) {
     // Remove blank screensaver
     QFile file("/mnt/onboard/.kobo/screensaver/nickel-screensaver.png");
     file.remove();
-
-    if (overlay_pixmap.isNull() && screensaver_image.isNull()) {
-        return;
-    }
 
     void *mwc = MainWindowController_sharedInstance();
     QWidget *current_view = MainWindowController_currentView(mwc);
@@ -572,6 +808,23 @@ void after_view_shown() {
         }
     }
 
+    bool charging_overlay_enabled = false;
+    if (allow_charging_overlay && QDir("/mnt/onboard/.kobo/screensaver").exists()) {
+        QSettings settings("/mnt/onboard/.adds/screensaver/_settings.ini", QSettings::IniFormat);
+        charging_overlay_enabled = settings.value(BATTERY_ENABLED, true).toBool();
+    }
+
+    QWidget *charging_overlay = current_view->findChild<QWidget*>(
+        QStringLiteral("nickelChargingOverlay"), Qt::FindDirectChildrenOnly);
+    if (charging_overlay_enabled) {
+        if (!charging_overlay) {
+            charging_overlay = new ChargingOverlay(current_view);
+        }
+        charging_overlay->raise();
+    } else if (!charging_overlay_enabled && charging_overlay) {
+        charging_overlay->hide();
+    }
+
     // BookCoverDragonPowerView_setInfoPanelVisible(current_view, true);
 }
 
@@ -593,12 +846,12 @@ extern "C" __attribute__((visibility("default")))
 void hook_N3PowerWorkflowManager_showSleepView(N3PowerWorkflowManager* self) {
     N3PowerWorkflowManager_showSleepView(self);
 
-    after_view_shown();
+    after_view_shown(true);
 }
 
 extern "C" __attribute__((visibility("default")))
 void hook_N3PowerWorkflowManager_showPowerOffView(N3PowerWorkflowManager* self) {
     N3PowerWorkflowManager_showPowerOffView(self);
 
-    after_view_shown();
+    after_view_shown(false);
 }

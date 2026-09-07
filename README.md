@@ -154,6 +154,11 @@ Iterations=5
 ; Quality of the glitched image
 ; Value ranges from 10 to 100 (default: 10, lower is faster)
 Quality=10
+
+[Battery]
+; Show charging status at the top of the sleep screen while plugged in
+; Value: true/false
+Enabled=true
 ```
 
 Demonstration of the glitch effect
@@ -224,11 +229,13 @@ You need to edit Kobo's setting file to prevent it from scanning hidden folders.
 5. Reboot the device
 
 # Build from source
-To build Nickel Screensaver, run the following command:  
+To build Nickel Screensaver with Docker, run:
 
 ```
-docker run --volume="$PWD:$PWD" --user="$(id -u):$(id -g)" --workdir="$PWD" --env=HOME --entrypoint=make --rm -it ghcr.io/pgaskin/nickeltc:1.0 all koboroot
+./build.sh
 ```
+
+Set `NICKELTC_IMAGE` to use a different compatible toolchain image.
 
 # Acknowledgements
 
