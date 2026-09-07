@@ -797,14 +797,14 @@ void after_view_shown(bool allow_charging_overlay) {
             overlay->show();
         }
     } else if (!screensaver_image.isNull()) {
-        if (current_view_name == QStringLiteral("BookCoverDragonPowerView") && FullScreenDragonPowerView_setImage) {
-            FullScreenDragonPowerView_setImage(current_view, screensaver_image);
-        } else if (current_view_name == QStringLiteral("FramedDragonPowerView")) {
+        if (current_view_name == QStringLiteral("FramedDragonPowerView")) {
             // Instapaper
             QLabel* overlay = new QLabel(current_view);
             overlay->setPixmap(QPixmap::fromImage(screensaver_image));
             overlay->setGeometry(current_view->rect());
             overlay->show();
+        } else if (FullScreenDragonPowerView_setImage) {
+            FullScreenDragonPowerView_setImage(current_view, screensaver_image);
         }
     }
 
